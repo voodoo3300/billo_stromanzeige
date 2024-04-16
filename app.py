@@ -90,7 +90,8 @@ class MyApp(QWidget):
         super().__init__()
         if kiosk_mode:
             # Setze das Fenster in den Vollbildmodus und entferne die Dekoration
-            self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowFullScreen)
+            self.showFullScreen()
+            self.setWindowFlags(Qt.FramelessWindowHint)
         self.initUI()
 
     def initUI(self):
