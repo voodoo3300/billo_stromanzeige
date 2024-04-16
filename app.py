@@ -86,8 +86,11 @@ union(tables: [minValue, maxValue, avgValue, latestValue, dataCounter])
 
 
 class MyApp(QWidget):
-    def __init__(self):
+    def __init__(self, kiosk_mode=False):
         super().__init__()
+        if kiosk_mode:
+            # Setze das Fenster in den Vollbildmodus und entferne die Dekoration
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowFullScreen)
         self.initUI()
 
     def initUI(self):
@@ -338,6 +341,8 @@ if __name__ == '__main__':
     load_dotenv()
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
-    ex = MyApp()
+    kiosk_mode = '--kiosk' in sys.argv
+
+    ex = MyApp(kiosk_mode=kiosk_mode)
     ex.show()
     sys.exit(app.exec_())
