@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
 )
 import qdarkstyle
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QFontDatabase
 
 from dotenv import load_dotenv
 import os
@@ -139,6 +139,9 @@ class MyApp(QWidget):
     def initUI(self):
         self.setGeometry(100, 100, 800, 400)
         self.setWindowTitle("Pimmelzähler Info Display")
+        font_id = QFontDatabase.addApplicationFont("wwDigital.ttf")  # Pfad zur Schriftartdatei
+        font_name = QFontDatabase.applicationFontFamilies(font_id)[0]  # Name der geladenen Schriftart
+        self.custom_si_font = QFont(font_name, 14)  # Größe der Schriftart festlegen
 
         # Zählerstand
         self.lcd_zaehlerstand = QLCDNumber(self)
@@ -146,21 +149,21 @@ class MyApp(QWidget):
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
         # Anzahl der Ziffern, die angezeigt werden können
-        self.lcd_zaehlerstand.setDigitCount(10)
-        self.lcd_zaehlerstand.display(888888888)  # Beispielwert
+        self.lcd_zaehlerstand.setDigitCount(6)
+        self.lcd_zaehlerstand.display(000000)  # Beispielwert
 
         self.lcd_kulm = QLCDNumber(self)
         self.lcd_kulm.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
         # Anzahl der Ziffern, die angezeigt werden können
-        self.lcd_kulm.setDigitCount(10)
+        self.lcd_kulm.setDigitCount(6)
         self.lcd_kulm.display(0)  # Beispielwert
 
         self.lcd_current = QLCDNumber(self)
         self.lcd_current.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Anzahl der Ziffern, die angezeigt werden können
-        self.lcd_current.setDigitCount(5)
+        self.lcd_current.setDigitCount(6)
         self.lcd_current.display(88888)  # Beispielwert
         self.ts_label_current = QLabel("Warten auf Daten")
 
@@ -175,12 +178,12 @@ class MyApp(QWidget):
         self.stackedWidget = QStackedWidget(self)
 
         content_layout1 = self.create_page("Zählerstand")
-        content_layout1.addWidget(QLabel("kWh"), alignment=Qt.AlignRight)
+        content_layout1.addWidget(self.get_si('kWh'), alignment=Qt.AlignRight)
         content_layout1.addWidget(self.lcd_zaehlerstand)
         content_layout1.addWidget(QLabel("Letzte Aktualisierung"))
 
-        content_layout2 = self.create_page("Leistunfsaufnahme")
-        content_layout2.addWidget(QLabel("W"), alignment=Qt.AlignRight)
+        content_layout2 = self.create_page("Leistungsaufnahme")
+        content_layout2.addWidget(self.get_si('W'), alignment=Qt.AlignRight)
         content_layout2.addWidget(self.lcd_current)
         content_layout2.addWidget(self.ts_label_current)
 
@@ -329,6 +332,11 @@ class MyApp(QWidget):
     def fetch_data(self):
         print()
 
+    def get_si(self, text):
+        label = QLabel(text)
+        label.setFont(self.custom_si_font)
+        return label
+
     def update_progress_bar(self):
         if self.progress_value < 100:
             self.progress_value += 50  # Erhöht um 10% jede Sekunde
@@ -343,7 +351,7 @@ class MyApp(QWidget):
         # Aktualisieren Sie hier Ihre Info-Displays basierend auf den empfangenen Daten
         # self.page1.setText(str(data))  # Beispiel zur Anzeige der Daten
         print(str(data))
-        self.lcd_zaehlerstand.display(int(data["currentCounter"]["_value"]))
+        self.lcd_zaehlerstand.display(int(data["currentCounter"]["_value"] / 1000))
         self.lcd_current.display(int(data["latestValue"]["_value"]))
         self.ts_label_current.setText(
             self.__convert_to_local_time(
@@ -381,7 +389,8 @@ class MyApp(QWidget):
 
         # Überschrift
         header = QLabel(title)
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header.setFont(self.custom_si_font)
+        header.setStyleSheet("font-size: 24px")
         page_layout.addWidget(header)
 
         # Trennlinie
