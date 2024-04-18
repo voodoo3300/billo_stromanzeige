@@ -149,11 +149,19 @@ from(bucket: "Strom")
         y_data = []
         for table in result:
             for record in table.records:
-                x_data.append(record.get_time())
+                x_data.append(self.__convert_utc_to_local(record.get_time()))
                 y_data.append(record.get_value())
 
         client.close()
         self.dataFetchedForPlot.emit(x_data, y_data)
+
+    def __convert_utc_to_local(self, utc_time):
+        # Stelle sicher, dass die Zeit als UTC markiert ist
+        utc_time = utc_time.replace(tzinfo=timezone.utc)
+
+        # Konvertiere die Zeit in die gewünschte Zeitzone ('Europe/Berlin')
+        local_time = utc_time.astimezone(ZoneInfo("Europe/Berlin"))
+        return local_time
 
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, dpi=100):
@@ -460,17 +468,17 @@ class MyApp(QWidget):
         print(str(data))
 
         self.ts_label_current.setText(
-            self.__convert_to_local_time(
+            self.__convert_to_local_time_str(
                 data["latestValue"]["_time"], "Datensatz vom"
             )
         )
 
         self.ts_label_counter.setText(
-            self.__convert_to_local_time(
+            self.__convert_to_local_time_str(
                 data["currentCounter"]["_time"], "Datensatz vom"
             )
         )
-        print(self.__convert_to_local_time(data["currentCounter"]["_time"]))
+        print(self.__convert_to_local_time_str(data["currentCounter"]["_time"]))
         today_total = (data["currentCounter"]["_value"] -
                        data["startofdayCounter"]["_value"]) / 1000
         self.minW.setText(f'{data["minValue"]["_value"]:.1f} W')
@@ -478,8 +486,8 @@ class MyApp(QWidget):
         self.avgW.setText(f'{data["avgValue"]["_value"]:.1f} W')
         self.consumptionToday.setText(f'{today_total:.1f}')
         self.labelTodayCost.setText(f'{(today_total * 0.12):.2f} €')
-
-    def __convert_to_local_time(self, utc_time, prefix=None, suffix=None):
+    
+    def __convert_to_local_time_str(self, utc_time, prefix=None, suffix=None):
         # Angenommen, data["currentCounter"]["_time"] ist ein datetime-Objekt in UTC
         utc_time = utc_time.replace(tzinfo=timezone.utc)
 
