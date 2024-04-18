@@ -19,7 +19,9 @@ from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QGroupBox,
                              QStackedWidget, QVBoxLayout, QWidget)
 
 from local_storage import DataHandler
+import matplotlib.pyplot as plt
 
+plt.style.use('dark_background')
 glow_style = """
 QLabel {
     color: #f8f8f2;
@@ -142,17 +144,18 @@ from(bucket: "Strom")
   |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
   |> filter(fn: (r) => r["_field"] == "value")
   |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
-  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
 """
         result = query_api.query(query=query)
         x_data = []
         y_data = []
         for table in result:
             for record in table.records:
-                x_data.append(self.__convert_utc_to_local(record.get_time()))
+                x_data.append(record.get_time())
                 y_data.append(record.get_value())
 
         client.close()
+        x_data = [self.__convert_utc_to_local(x) for x in x_data]
         self.dataFetchedForPlot.emit(x_data, y_data)
 
     def __convert_utc_to_local(self, utc_time):
@@ -324,10 +327,7 @@ class MyApp(QWidget):
         content_layout4.addWidget(self.lcd_kulm)
 
         content_layout5 = self.create_page("Verlauf")
-        x = [0, 1, 2, 3, 4, 5]
-        y = [i ** 2 for i in x]
-        self.canvas.axes.plot(x, y)
-        self.canvas.draw()
+    
         content_layout5.addWidget(self.canvas)
 
         middle_layout.addWidget(self.stackedWidget)
@@ -378,8 +378,8 @@ class MyApp(QWidget):
         self.plotDataThread.dataFetchedForPlot.connect(self.update_plot)
         self.start_plot_data_thread()
         self.plot_timer = QTimer(self)
-        #self.plot_timer.setInterval(10000)
-        self.plot_timer.setInterval(600000) 
+        self.plot_timer.setInterval(10000)
+        #self.plot_timer.setInterval(600000) 
         self.plot_timer.timeout.connect(self.start_plot_data_thread)
         self.plot_timer.start()
 
@@ -389,8 +389,8 @@ class MyApp(QWidget):
     def update_plot(self, x_data, y_data):
         # Hier kannst du die Daten in einem Matplotlib-Plot darstellen
         self.canvas.axes.clear()  # Vorhandene Daten im Plot löschen
-        self.canvas.axes.plot(x_data, y_data, 'r-')  # Daten als rote Linie plotten
-        self.canvas.axes.xaxis.set_major_formatter(mdates.DateFormatter('%Hh'))
+        self.canvas.axes.plot(x_data, y_data)  # Daten als rote Linie plotten
+        self.canvas.axes.xaxis.set_major_formatter(mdates.DateFormatter('%Hh', tz=ZoneInfo("Europe/Berlin")))
         self.canvas.axes.xaxis.set_major_locator(mdates.HourLocator(interval=1))
         self.canvas.axes.yaxis.set_major_formatter(ticker.FuncFormatter(watt_formatter))
         self.canvas.draw()
@@ -410,11 +410,9 @@ class MyApp(QWidget):
             self.cumcounter.set_data(self.zaehlerstand)
             self.lable_cumstat.setText(
                 'Gestartet...')
-        print("Start/Stop Button was clicked")
+        
 
-    def resetClicked(self):
-        # Funktion, die ausgelöst wird, wenn der "Reset" Button geklickt wird
-        print("Reset Button was clicked")
+
 
     def show_previous_page(self):
         index = self.stackedWidget.currentIndex()
@@ -465,7 +463,7 @@ class MyApp(QWidget):
         else:
             self.lable_cumstat.setText('Gestoppt')
 
-        print(str(data))
+      
 
         self.ts_label_current.setText(
             self.__convert_to_local_time_str(
@@ -478,7 +476,7 @@ class MyApp(QWidget):
                 data["currentCounter"]["_time"], "Datensatz vom"
             )
         )
-        print(self.__convert_to_local_time_str(data["currentCounter"]["_time"]))
+        
         today_total = (data["currentCounter"]["_value"] -
                        data["startofdayCounter"]["_value"]) / 1000
         self.minW.setText(f'{data["minValue"]["_value"]:.1f} W')
