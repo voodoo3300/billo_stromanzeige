@@ -1,30 +1,24 @@
+import os
 import sys
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from influxdb_client import InfluxDBClient
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtWidgets import (
-    QApplication,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLCDNumber,
-    QProgressBar,
-    QPushButton,
-    QSizePolicy,
-    QSpacerItem,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-    QGroupBox,
-)
+import matplotlib.dates as mdates
+import matplotlib.ticker as ticker
 import qdarkstyle
-from PyQt5.QtGui import QFont, QFontDatabase
-from local_storage import DataHandler
 from dotenv import load_dotenv
-import os
+from influxdb_client import InfluxDBClient
+from matplotlib.backends.backend_qt5agg import \
+    FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QFont, QFontDatabase
+from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QGroupBox,
+                             QHBoxLayout, QLabel, QLCDNumber, QProgressBar,
+                             QPushButton, QSizePolicy, QSpacerItem,
+                             QStackedWidget, QVBoxLayout, QWidget)
+
+from local_storage import DataHandler
 
 glow_style = """
 QLabel {
@@ -36,7 +30,8 @@ QLabel {
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
 }
 """
-
+def watt_formatter(x, pos):
+    return f"{int(x)} W"
 
 def load_stylesheet(file_path):
     """Lädt ein Stylesheet aus einer Datei in einen String."""
@@ -55,8 +50,6 @@ class DataThread(QThread):
     def __init__(self, url):
         super().__init__()
         self.url = url
-
-        
 
     def run(self):
         client = InfluxDBClient(
@@ -129,6 +122,50 @@ union(tables: [minValue, maxValue, avgValue, latestValue, latestCounter, startCo
         client.close()
         self.dataFetched.emit(data_dict)
 
+class PlotDataThread(QThread):
+    dataFetchedForPlot = pyqtSignal(list, list)  # x, y Werte für Plot
+
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+
+    def run(self):
+        client = InfluxDBClient(
+            url=os.environ.get("influx_url"),
+            token=os.environ.get("influx_token"),
+            org=os.environ.get("influx_org"),
+        )
+        query_api = client.query_api()
+        query = """
+from(bucket: "Strom")
+  |> range(start: -12h)
+  |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
+  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+"""
+        result = query_api.query(query=query)
+        x_data = []
+        y_data = []
+        for table in result:
+            for record in table.records:
+                x_data.append(record.get_time())
+                y_data.append(record.get_value())
+
+        client.close()
+        self.dataFetchedForPlot.emit(x_data, y_data)
+
+class MplCanvas(FigureCanvas):
+    def __init__(self, parent=None, dpi=100):
+        # Berechne die Größe in Zoll basierend auf der maximalen Pixelgröße und der DPI
+        width_in_inches = 500 / dpi  # Max. 500 Pixel breit
+        height_in_inches = 300 / dpi  # Max. 250 Pixel hoch
+        
+        # Erstelle eine Figur mit den berechneten Dimensionen
+        fig = Figure(figsize=(width_in_inches, height_in_inches), dpi=dpi)
+        self.axes = fig.add_subplot(111)
+        
+        super(MplCanvas, self).__init__(fig)
 
 class MyApp(QWidget):
     def __init__(self, kiosk_mode=False):
@@ -139,9 +176,11 @@ class MyApp(QWidget):
             self.setWindowFlags(Qt.FramelessWindowHint)
         self.cumcounter = DataHandler()
         self.zaehlerstand = 0
+        self.canvas = MplCanvas(self, dpi=100)
         self.initUI()
 
     def initUI(self):
+
         self.setGeometry(100, 100, 800, 400)
         self.setWindowTitle("Pimmelzähler Info Display")
         font_id = QFontDatabase.addApplicationFont(
@@ -150,7 +189,11 @@ class MyApp(QWidget):
             font_id)[0]  # Name der geladenen Schriftart
         # Größe der Schriftart festlegen
         self.custom_si_font = QFont(font_name, 14)
-
+        self.custom_info_font = QFont(font_name, 9)
+        self.ts_label_current = QLabel("Warten auf Daten")
+        self.ts_label_current.setFont(self.custom_info_font)
+        self.ts_label_counter = QLabel("Warten auf Daten")
+        self.ts_label_counter.setFont(self.custom_info_font)
         # Zählerstand
         self.lcd_zaehlerstand = QLCDNumber(self)
         self.lcd_zaehlerstand.setSizePolicy(
@@ -174,7 +217,6 @@ class MyApp(QWidget):
         # Anzahl der Ziffern, die angezeigt werden können
         self.lcd_current.setDigitCount(6)
         self.lcd_current.display(88888)  # Beispielwert
-        self.ts_label_current = QLabel("Warten auf Daten")
 
         # Hauptlayout
         layout = QHBoxLayout(self)
@@ -189,8 +231,7 @@ class MyApp(QWidget):
         content_layout1 = self.create_page("Zählerstand")
         content_layout1.addWidget(self.get_si('kWh'), alignment=Qt.AlignRight)
         content_layout1.addWidget(self.lcd_zaehlerstand)
-        content_layout1.addWidget(QLabel("Letzte Aktualisierung"))
-
+        content_layout1.addWidget(self.ts_label_counter)
         content_layout2 = self.create_page("Leistungsaufnahme")
         content_layout2.addWidget(self.get_si('W'), alignment=Qt.AlignRight)
         content_layout2.addWidget(self.lcd_current)
@@ -263,22 +304,23 @@ class MyApp(QWidget):
         content_layout4 = self.create_page("Kumulativer Zähler")
         self.lable_cumstat = self.get_si('8888888888888888888888888888888')
         content_layout4.addWidget(self.lable_cumstat, alignment=Qt.AlignRight)
-        
+
         controll_container_widget = QWidget(self)
         controll_container_layout = QHBoxLayout(controll_container_widget)
         self.startStopButton = QPushButton("Start / Stop")
-        self.startStopButton.clicked.connect(self.startStopClicked) 
+        self.startStopButton.clicked.connect(self.startStopClicked)
         controll_container_layout.addWidget(self.startStopButton)
-
 
         content_layout4.addWidget(controll_container_widget)
 
-
-
- 
-
         content_layout4.addWidget(self.lcd_kulm)
-        
+
+        content_layout5 = self.create_page("Verlauf")
+        x = [0, 1, 2, 3, 4, 5]
+        y = [i ** 2 for i in x]
+        self.canvas.axes.plot(x, y)
+        self.canvas.draw()
+        content_layout5.addWidget(self.canvas)
 
         middle_layout.addWidget(self.stackedWidget)
 
@@ -286,6 +328,7 @@ class MyApp(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(100)
+        self.progress_bar.setFormat("")
         middle_layout.addWidget(self.progress_bar)
 
         # Button links
@@ -315,7 +358,7 @@ class MyApp(QWidget):
         self.progress_value = 0
         self.progress_timer = QTimer(self)
         # 1000 Millisekunden == 1 Sekunde
-        self.progress_timer.setInterval(1000)
+        self.progress_timer.setInterval(20)
         self.progress_timer.timeout.connect(self.update_progress_bar)
         self.progress_timer.start()
 
@@ -323,23 +366,40 @@ class MyApp(QWidget):
         self.dataThread = DataThread(
             "http://localhost:5000/api/energy/consumption")
         self.dataThread.dataFetched.connect(self.update_display)
+        self.plotDataThread = PlotDataThread("http://localhost:8086")
+        self.plotDataThread.dataFetchedForPlot.connect(self.update_plot)
+
+        self.start_plot_data_thread()
+
+    def update_plot(self, x_data, y_data):
+        # Hier kannst du die Daten in einem Matplotlib-Plot darstellen
+        self.canvas.axes.clear()  # Vorhandene Daten im Plot löschen
+        self.canvas.axes.plot(x_data, y_data, 'r-')  # Daten als rote Linie plotten
+        self.canvas.axes.xaxis.set_major_formatter(mdates.DateFormatter('%Hh'))
+        self.canvas.axes.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        self.canvas.axes.yaxis.set_major_formatter(ticker.FuncFormatter(watt_formatter))
+        self.canvas.draw()
+
+    def start_plot_data_thread(self):
+        if not self.plotDataThread.isRunning():
+            self.plotDataThread.start()
+
     def startStopClicked(self):
         # Funktion, die ausgelöst wird, wenn der "Start / Stop" Button geklickt wird
         if self.cumcounter.data.get('cum_counter_start_value', None) is not None and self.cumcounter.data.get('cum_counter_start_time', None) is not None:
             self.cumcounter.reset_data()
             self.lcd_kulm.display(0)
             self.lable_cumstat.setText(
-            'Gestoppt')
+                'Gestoppt')
         else:
             self.cumcounter.set_data(self.zaehlerstand)
             self.lable_cumstat.setText(
-            'Gestartet...')
+                'Gestartet...')
         print("Start/Stop Button was clicked")
 
     def resetClicked(self):
         # Funktion, die ausgelöst wird, wenn der "Reset" Button geklickt wird
         print("Reset Button was clicked")
-
 
     def show_previous_page(self):
         index = self.stackedWidget.currentIndex()
@@ -361,7 +421,7 @@ class MyApp(QWidget):
 
     def update_progress_bar(self):
         if self.progress_value < 100:
-            self.progress_value += 50  # Erhöht um 10% jede Sekunde
+            self.progress_value += 1  # Erhöht um 10% jede Sekunde
 
         else:
             self.progress_value = 0
@@ -376,23 +436,29 @@ class MyApp(QWidget):
 
         # Zählerstand
         self.lcd_zaehlerstand.display(
-                    int(self.zaehlerstand))
-        
+            int(self.zaehlerstand))
+
         # Leistung
         self.lcd_current.display(int(data["latestValue"]["_value"]))
 
         # Kul
         if self.cumcounter.data.get('cum_counter_start_value', None) is not None and self.cumcounter.data.get('cum_counter_start_time', None) is not None:
-            self.lcd_kulm.display(int(self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value')))
-            self.lable_cumstat.setText(f"-> EUR {((self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value'))*.2866):.2f} seit {self.cumcounter.data.get('cum_counter_start_time')} | kWh")
+            self.lcd_kulm.display(
+                int(self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value')))
+            self.lable_cumstat.setText(
+                f"-> EUR {((self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value'))*.2866):.2f} seit {self.cumcounter.data.get('cum_counter_start_time')} | kWh")
         else:
             self.lable_cumstat.setText('Gestoppt')
 
-
         print(str(data))
-        
-        
+
         self.ts_label_current.setText(
+            self.__convert_to_local_time(
+                data["latestValue"]["_time"], "Datensatz vom"
+            )
+        )
+
+        self.ts_label_counter.setText(
             self.__convert_to_local_time(
                 data["currentCounter"]["_time"], "Datensatz vom"
             )
@@ -412,7 +478,7 @@ class MyApp(QWidget):
 
         # Konvertierung in die Zeitzone 'Europe/Berlin'
         berlin_time = utc_time.astimezone(ZoneInfo("Europe/Berlin"))
-        berlin_time.strftime("%d.%m.%Y %H:%M:%S")
+        berlin_time = berlin_time.strftime("%d.%m.%Y %H:%M:%S")
 
         if prefix is not None:
             berlin_time = f"{prefix} {berlin_time}"
