@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
 )
 import qdarkstyle
 from PyQt5.QtGui import QFont, QFontDatabase
-
+from local_storage import DataHandler
 from dotenv import load_dotenv
 import os
 
@@ -36,6 +36,7 @@ QLabel {
     text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
 }
 """
+
 
 def load_stylesheet(file_path):
     """Lädt ein Stylesheet aus einer Datei in einen String."""
@@ -54,6 +55,8 @@ class DataThread(QThread):
     def __init__(self, url):
         super().__init__()
         self.url = url
+
+        
 
     def run(self):
         client = InfluxDBClient(
@@ -134,14 +137,19 @@ class MyApp(QWidget):
             # Setze das Fenster in den Vollbildmodus und entferne die Dekoration
             self.showFullScreen()
             self.setWindowFlags(Qt.FramelessWindowHint)
+        self.cumcounter = DataHandler()
+        self.zaehlerstand = 0
         self.initUI()
 
     def initUI(self):
         self.setGeometry(100, 100, 800, 400)
         self.setWindowTitle("Pimmelzähler Info Display")
-        font_id = QFontDatabase.addApplicationFont("wwDigital.ttf")  # Pfad zur Schriftartdatei
-        font_name = QFontDatabase.applicationFontFamilies(font_id)[0]  # Name der geladenen Schriftart
-        self.custom_si_font = QFont(font_name, 14)  # Größe der Schriftart festlegen
+        font_id = QFontDatabase.addApplicationFont(
+            "wwDigital.ttf")  # Pfad zur Schriftartdatei
+        font_name = QFontDatabase.applicationFontFamilies(
+            font_id)[0]  # Name der geladenen Schriftart
+        # Größe der Schriftart festlegen
+        self.custom_si_font = QFont(font_name, 14)
 
         # Zählerstand
         self.lcd_zaehlerstand = QLCDNumber(self)
@@ -161,7 +169,8 @@ class MyApp(QWidget):
         self.lcd_kulm.display(0)  # Beispielwert
 
         self.lcd_current = QLCDNumber(self)
-        self.lcd_current.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.lcd_current.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Anzahl der Ziffern, die angezeigt werden können
         self.lcd_current.setDigitCount(6)
         self.lcd_current.display(88888)  # Beispielwert
@@ -209,9 +218,8 @@ class MyApp(QWidget):
         labelToday = QLabel("Verbrauch heute")
         gridLayout.addWidget(labelToday, 0, 0)
 
-
         self.consumptionToday = QLabel("----")
-        self.consumptionToday.setStyleSheet(glow_style) 
+        self.consumptionToday.setStyleSheet(glow_style)
         self.consumptionToday.setFont(QFont("Arial", 20))
         gridLayout.addWidget(self.consumptionToday, 0, 1)
 
@@ -223,9 +231,6 @@ class MyApp(QWidget):
         gridLayout.addWidget(self.labelTodayCost, 0, 3)
 
         p3_top_layout.addWidget(groupBox)
-
-
-
 
         # QGroupBox für Max-Wert
         self.groupBoxMax = QGroupBox("MAX(P) der letzten 24h")
@@ -253,29 +258,28 @@ class MyApp(QWidget):
 
         p3_top_layout.addWidget(self.groupBoxAvg)
 
-
-
-        
-
-        
         content_layout3.addWidget(p3_top_container)
 
-
         content_layout4 = self.create_page("Kumulativer Zähler")
-        content_layout4.addWidget(QLabel("kWh"), alignment=Qt.AlignRight)
-        self.reset_button = QPushButton("Reset", self)
-        #self.reset_button.clicked.connect(self.reset_counter)
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        content_layout4.addWidget(line)
-        content_layout4.addWidget(QLabel("Verbrauch seit"), alignment=Qt.AlignCenter)
-        content_layout4.addWidget(QLabel("gbhjnkml"), alignment=Qt.AlignRight)
-        content_layout4.addWidget(line)
+        self.lable_cumstat = self.get_si('8888888888888888888888888888888')
+        content_layout4.addWidget(self.lable_cumstat, alignment=Qt.AlignRight)
         
+        controll_container_widget = QWidget(self)
+        controll_container_layout = QHBoxLayout(controll_container_widget)
+        self.startStopButton = QPushButton("Start / Stop")
+        self.startStopButton.clicked.connect(self.startStopClicked) 
+        controll_container_layout.addWidget(self.startStopButton)
+
+
+        content_layout4.addWidget(controll_container_widget)
+
+
+
+ 
+
         content_layout4.addWidget(self.lcd_kulm)
-        content_layout4.addWidget(self.reset_button)
         
+
         middle_layout.addWidget(self.stackedWidget)
 
         # ProgressBar
@@ -316,8 +320,26 @@ class MyApp(QWidget):
         self.progress_timer.start()
 
         # Thread für Netzwerkanfragen
-        self.dataThread = DataThread("http://localhost:5000/api/energy/consumption")
+        self.dataThread = DataThread(
+            "http://localhost:5000/api/energy/consumption")
         self.dataThread.dataFetched.connect(self.update_display)
+    def startStopClicked(self):
+        # Funktion, die ausgelöst wird, wenn der "Start / Stop" Button geklickt wird
+        if self.cumcounter.data.get('cum_counter_start_value', None) is not None and self.cumcounter.data.get('cum_counter_start_time', None) is not None:
+            self.cumcounter.reset_data()
+            self.lcd_kulm.display(0)
+            self.lable_cumstat.setText(
+            'Gestoppt')
+        else:
+            self.cumcounter.set_data(self.zaehlerstand)
+            self.lable_cumstat.setText(
+            'Gestartet...')
+        print("Start/Stop Button was clicked")
+
+    def resetClicked(self):
+        # Funktion, die ausgelöst wird, wenn der "Reset" Button geklickt wird
+        print("Reset Button was clicked")
+
 
     def show_previous_page(self):
         index = self.stackedWidget.currentIndex()
@@ -350,16 +372,34 @@ class MyApp(QWidget):
     def update_display(self, data):
         # Aktualisieren Sie hier Ihre Info-Displays basierend auf den empfangenen Daten
         # self.page1.setText(str(data))  # Beispiel zur Anzeige der Daten
-        print(str(data))
-        self.lcd_zaehlerstand.display(int(data["currentCounter"]["_value"] / 1000))
+        self.zaehlerstand = data["currentCounter"]["_value"] / 1000
+
+        # Zählerstand
+        self.lcd_zaehlerstand.display(
+                    int(self.zaehlerstand))
+        
+        # Leistung
         self.lcd_current.display(int(data["latestValue"]["_value"]))
+
+        # Kul
+        if self.cumcounter.data.get('cum_counter_start_value', None) is not None and self.cumcounter.data.get('cum_counter_start_time', None) is not None:
+            self.lcd_kulm.display(int(self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value')))
+            self.lable_cumstat.setText(f"-> EUR {((self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value'))*.2866):.2f} seit {self.cumcounter.data.get('cum_counter_start_time')} | kWh")
+        else:
+            self.lable_cumstat.setText('Gestoppt')
+
+
+        print(str(data))
+        
+        
         self.ts_label_current.setText(
             self.__convert_to_local_time(
                 data["currentCounter"]["_time"], "Datensatz vom"
             )
         )
         print(self.__convert_to_local_time(data["currentCounter"]["_time"]))
-        today_total = (data["currentCounter"]["_value"] - data["startofdayCounter"]["_value"]) / 1000
+        today_total = (data["currentCounter"]["_value"] -
+                       data["startofdayCounter"]["_value"]) / 1000
         self.minW.setText(f'{data["minValue"]["_value"]:.1f} W')
         self.maxW.setText(f'{data["maxValue"]["_value"]:.1f} W')
         self.avgW.setText(f'{data["avgValue"]["_value"]:.1f} W')
@@ -403,8 +443,8 @@ class MyApp(QWidget):
         content_layout = QVBoxLayout()
 
         # Spacer, der den Inhalt nach unten drückt
-        #spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        #page_layout.addSpacerItem(spacer)
+        # spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        # page_layout.addSpacerItem(spacer)
 
         # Fügt das Inhalt-Layout hinzu, das sich anpassen kann, um den verbleibenden Platz zu füllen
         page_layout.addLayout(content_layout)
