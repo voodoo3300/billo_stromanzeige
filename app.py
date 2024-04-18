@@ -368,8 +368,15 @@ class MyApp(QWidget):
         self.dataThread.dataFetched.connect(self.update_display)
         self.plotDataThread = PlotDataThread("http://localhost:8086")
         self.plotDataThread.dataFetchedForPlot.connect(self.update_plot)
-
         self.start_plot_data_thread()
+        self.plot_timer = QTimer(self)
+        #self.plot_timer.setInterval(10000)
+        self.plot_timer.setInterval(600000) 
+        self.plot_timer.timeout.connect(self.start_plot_data_thread)
+        self.plot_timer.start()
+
+
+        
 
     def update_plot(self, x_data, y_data):
         # Hier kannst du die Daten in einem Matplotlib-Plot darstellen
