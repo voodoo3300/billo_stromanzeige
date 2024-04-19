@@ -272,15 +272,16 @@ class MyApp(QWidget):
 
         self.consumptionToday = QLabel("----")
         self.consumptionToday.setStyleSheet(glow_style)
-        self.consumptionToday.setFont(QFont("Arial", 20))
+        self.consumptionToday.setFont(QFont(font_name, 20))
         gridLayout.addWidget(self.consumptionToday, 0, 1)
 
-        labelTodayUnit = QLabel("kWh")
-        gridLayout.addWidget(labelTodayUnit, 0, 2)
+        gridLayout.addWidget(QLabel("kWh"), 0, 2)
 
-        self.labelTodayCost = QLabel("----- €")
-        self.labelTodayCost.setFont(QFont("Arial", 14))
+        self.labelTodayCost = QLabel("")
+        self.labelTodayCost.setStyleSheet(glow_style)
+        self.labelTodayCost.setFont(QFont(font_name, 20))
         gridLayout.addWidget(self.labelTodayCost, 0, 3)
+        gridLayout.addWidget(QLabel('€'), 0, 4)
 
         p3_top_layout.addWidget(groupBox)
 
@@ -378,8 +379,8 @@ class MyApp(QWidget):
         self.plotDataThread.dataFetchedForPlot.connect(self.update_plot)
         self.start_plot_data_thread()
         self.plot_timer = QTimer(self)
-        self.plot_timer.setInterval(10000)
-        #self.plot_timer.setInterval(600000) 
+        #self.plot_timer.setInterval(10000)
+        self.plot_timer.setInterval(600000) 
         self.plot_timer.timeout.connect(self.start_plot_data_thread)
         self.plot_timer.start()
 
@@ -459,7 +460,7 @@ class MyApp(QWidget):
             self.lcd_kulm.display(
                 int(self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value')))
             self.lable_cumstat.setText(
-                f"-> EUR {((self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value'))*.2866):.2f} seit {self.cumcounter.data.get('cum_counter_start_time')} | kWh")
+                f"-> EUR {((self.zaehlerstand - self.cumcounter.data.get('cum_counter_start_value'))*.31):.2f} seit {self.cumcounter.data.get('cum_counter_start_time')} | kWh")
         else:
             self.lable_cumstat.setText('Gestoppt')
 
@@ -483,7 +484,7 @@ class MyApp(QWidget):
         self.maxW.setText(f'{data["maxValue"]["_value"]:.1f} W')
         self.avgW.setText(f'{data["avgValue"]["_value"]:.1f} W')
         self.consumptionToday.setText(f'{today_total:.1f}')
-        self.labelTodayCost.setText(f'{(today_total * 0.12):.2f} €')
+        self.labelTodayCost.setText(f'{(today_total * 0.31):.2f}')
     
     def __convert_to_local_time_str(self, utc_time, prefix=None, suffix=None):
         # Angenommen, data["currentCounter"]["_time"] ist ein datetime-Objekt in UTC
