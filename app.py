@@ -77,6 +77,17 @@ dataCounter = from(bucket: "Strom")
   |> filter(fn: (r) => r["uuid"] == "22792059-416a-4117-8b3a-420e34a841a1")
   |> group(columns: ["uuid"])
 
+dataCounterDeliver = from(bucket: "Strom")
+  |> range(start: date.truncate(t: now(), unit: 1d), stop: now())
+  |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["uuid"] == "86ef6af6-c13a-4084-beed-6183b44c0a17")
+  |> group(columns: ["uuid"])
+
+latestCounterDelivery = dataCounterDeliver
+  |> last()
+  |> set(key: "_field", value: "currentCounterDelivery")
+
 latestCounter = dataCounter
   |> last()
   |> set(key: "_field", value: "currentCounter")
@@ -102,7 +113,7 @@ latestValue = dataWattage
   |> set(key: "_field", value: "latestValue")
 
 // Kombinieren von Min und Max
-union(tables: [minValue, maxValue, avgValue, latestValue, latestCounter, startCounter]) 
+union(tables: [minValue, maxValue, avgValue, latestValue, latestCounter, startCounter, latestCounterDelivery]) 
 """
         result = query_api.query(query=query)
         data_dict = {}
@@ -187,6 +198,7 @@ class MyApp(QWidget):
             self.setWindowFlags(Qt.FramelessWindowHint)
         self.cumcounter = DataHandler()
         self.zaehlerstand = 0
+        self.zaehlerstand_ein = 0
         self.canvas = MplCanvas(self, dpi=100)
         self.initUI()
 
@@ -214,6 +226,17 @@ class MyApp(QWidget):
         self.lcd_zaehlerstand.setDigitCount(6)
         self.lcd_zaehlerstand.display(000000)  # Beispielwert
 
+
+
+        # Zählerstand
+        self.lcd_zaehlerstand_ein = QLCDNumber(self)
+        self.lcd_zaehlerstand_ein.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+        # Anzahl der Ziffern, die angezeigt werden können
+        self.lcd_zaehlerstand_ein.setDigitCount(6)
+        self.lcd_zaehlerstand_ein.display(000000)  # Beispielwert
+
         self.lcd_kulm = QLCDNumber(self)
         self.lcd_kulm.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
@@ -239,10 +262,16 @@ class MyApp(QWidget):
         # Stacked Widget
         self.stackedWidget = QStackedWidget(self)
 
-        content_layout1 = self.create_page("Zählerstand")
+        content_layout1 = self.create_page("Zählerstand Bezug")
         content_layout1.addWidget(self.get_si('kWh'), alignment=Qt.AlignRight)
         content_layout1.addWidget(self.lcd_zaehlerstand)
         content_layout1.addWidget(self.ts_label_counter)
+
+        content_layout1a = self.create_page("Zählerstand Einspeisung")
+        content_layout1a.addWidget(self.get_si('Wh'), alignment=Qt.AlignRight)
+        content_layout1a.addWidget(self.lcd_zaehlerstand_ein)
+        content_layout1a.addWidget(self.ts_label_counter)
+
         content_layout2 = self.create_page("Leistungsaufnahme")
         content_layout2.addWidget(self.get_si('W'), alignment=Qt.AlignRight)
         content_layout2.addWidget(self.lcd_current)
@@ -447,10 +476,14 @@ class MyApp(QWidget):
         # Aktualisieren Sie hier Ihre Info-Displays basierend auf den empfangenen Daten
         # self.page1.setText(str(data))  # Beispiel zur Anzeige der Daten
         self.zaehlerstand = data["currentCounter"]["_value"] / 1000
+        self.zaehlerstand_ein = data["currentCounterDelivery"]["_value"] #/ 1000
 
         # Zählerstand
         self.lcd_zaehlerstand.display(
             int(self.zaehlerstand))
+
+        self.lcd_zaehlerstand_ein.display(
+            int(self.zaehlerstand_ein))
 
         # Leistung
         self.lcd_current.display(int(data["latestValue"]["_value"]))
