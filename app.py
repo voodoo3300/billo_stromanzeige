@@ -70,6 +70,7 @@ dataWattage = from(bucket: "Strom")
   |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
   |> group(columns: ["uuid"])
 
+// Tageszähler (Bezug)
 dataCounter = from(bucket: "Strom")
   |> range(start: date.truncate(t: now(), unit: 1d), stop: now())
   |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
@@ -77,6 +78,7 @@ dataCounter = from(bucket: "Strom")
   |> filter(fn: (r) => r["uuid"] == "22792059-416a-4117-8b3a-420e34a841a1")
   |> group(columns: ["uuid"])
 
+// Tageszähler (Einspeisung)
 dataCounterDeliver = from(bucket: "Strom")
   |> range(start: date.truncate(t: now(), unit: 1d), stop: now())
   |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
@@ -84,36 +86,55 @@ dataCounterDeliver = from(bucket: "Strom")
   |> filter(fn: (r) => r["uuid"] == "86ef6af6-c13a-4084-beed-6183b44c0a17")
   |> group(columns: ["uuid"])
 
-latestCounterDelivery = dataCounterDeliver
+// ---- Autoencoder: letzter Fehler ----
+latestError = from(bucket: "Strom")
+  |> range(start: -10m)
+  |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
+  |> filter(fn: (r) => r["_field"] == "error")
+  |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
   |> last()
-  |> set(key: "_field", value: "currentCounterDelivery")
+  |> set(key: "_field", value: "latestError")
 
-latestCounter = dataCounter
+// ---- Autoencoder: aktueller Anomaly-Indikator (0/1) ----
+latestAnomaly = from(bucket: "Strom")
+  |> range(start: -10m)
+  |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
+  |> filter(fn: (r) => r["_field"] == "anomaly")
+  |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
   |> last()
-  |> set(key: "_field", value: "currentCounter")
+  |> set(key: "_field", value: "latestAnomaly")
 
-startCounter = dataCounter
-  |> first()
-  |> set(key: "_field", value: "startofdayCounter")
+// ---- Autoencoder: War in den letzten 5 Minuten eine Anomalie? ----
+recentAnomaly = from(bucket: "Strom")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r["_measurement"] == "vz_measurement")
+  |> filter(fn: (r) => r["_field"] == "anomaly")
+  |> filter(fn: (r) => r["uuid"] == "1810eb97-3799-46d8-9764-2ab1c4ea7cb4")
+  |> max()            // wenn max == 1 → es gab eine Anomalie
+  |> set(key: "_field", value: "recentAnomaly")
 
-minValue = dataWattage
-  |> min()
-  |> set(key: "_field", value: "minValue")
+// ---- Bestehende Werte ----
+latestCounterDelivery = dataCounterDeliver |> last() |> set(key: "_field", value: "currentCounterDelivery")
+latestCounter = dataCounter |> last() |> set(key: "_field", value: "currentCounter")
+startCounter = dataCounter |> first() |> set(key: "_field", value: "startofdayCounter")
+minValue = dataWattage |> min() |> set(key: "_field", value: "minValue")
+maxValue = dataWattage |> max() |> set(key: "_field", value: "maxValue")
+avgValue = dataWattage |> mean() |> set(key: "_field", value: "avgValue")
+latestValue = dataWattage |> last() |> set(key: "_field", value: "latestValue")
 
-maxValue = dataWattage
-  |> max()
-  |> set(key: "_field", value: "maxValue")
-
-avgValue = dataWattage
-  |> mean()
-  |> set(key: "_field", value: "avgValue")
-
-latestValue = dataWattage
-  |> last()
-  |> set(key: "_field", value: "latestValue")
-
-// Kombinieren von Min und Max
-union(tables: [minValue, maxValue, avgValue, latestValue, latestCounter, startCounter, latestCounterDelivery]) 
+// ---- Alle Werte zusammenführen ----
+union(tables: [
+  minValue,
+  maxValue,
+  avgValue,
+  latestValue,
+  latestCounter,
+  startCounter,
+  latestCounterDelivery,
+  latestError,
+  latestAnomaly,
+  recentAnomaly
+])
 """
         result = query_api.query(query=query)
         data_dict = {}
@@ -486,6 +507,11 @@ class MyApp(QWidget):
             int(self.zaehlerstand_ein))
 
         # Leistung
+        if data["latestAnomaly"]["_value"] == 1:
+            self.lcd_current.setStyleSheet("QLCDNumber { color: yellow; }")
+        else:
+            self.lcd_current.setStyleSheet("QLCDNumber { color: white; }")
+
         self.lcd_current.display(int(data["latestValue"]["_value"]))
 
         # Kul
